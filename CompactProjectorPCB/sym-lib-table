@@ -1,0 +1,3 @@
+(sym_lib_table
+  (lib (name MieleProjectorPCB-rescue)(type Legacy)(uri ${KIPRJMOD}/MieleProjectorPCB-rescue.lib)(options "")(descr ""))
+)
