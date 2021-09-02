@@ -11,6 +11,15 @@
 #define PIN_STATUS_LED 17
 #define PIN_PWM_LED 9
 
+//only for debug
+#define PIN_DEBUG_A 2
+#define PIN_DEBUG_B 3
+#define PIN_DEBUG_C 4
+#define PIN_DEBUG_D 5
+#define PIN_DEBUG_E 6
+#define PIN_DEBUG_F 7
+#define PIN_DEBUG_G 8
+
 /*
   Projector Firmware von Constantin Zborowska
   Version 30.12.2020
@@ -44,7 +53,16 @@ bool statusCirculator = true;
 bool statusHeater = true;
 
 bool beamerLEDOn = true;
+bool forceOff = false;
+/* Program State
+ * 1 = pre run time
+ * 2 = in run
+ * 3 = after one run in standby
+ * 4 = complete off
+ */
+int programState = 1;
 
+int glow_counter = 0;
 int ani_counter = 0;
 bool ani_statusHeater = false;
 bool ani_statusIntake = false;
@@ -54,6 +72,7 @@ bool ani_cursor = false;
 char *timeToChars = (char*)malloc(2);
 
 long timer_last_exec = 0;
+long timer_start = 0;
 
 void setup(void) {
   Serial.begin(9600);
@@ -62,7 +81,7 @@ void setup(void) {
 
   pinMode(PIN_STATUS_LED, OUTPUT);
   pinMode(PIN_PWM_LED, OUTPUT);
-  analogWrite(PIN_PWM_LED, 255);
+  analogWrite(PIN_PWM_LED, 0);
 
   u8g2.setDisplayRotation(U8G2_R2);
 
@@ -72,7 +91,7 @@ void setup(void) {
   u8g2.sendBuffer();
   
   delay(1000);
-
+  timer_start = millis();
   //Serial.println("Start Programm");
 }
 
@@ -80,7 +99,7 @@ void loop(void) {
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_crox4hb_tf);
   u8g2.setContrast(255);
-
+  
   //Serial Received Loop
   while (Serial.available() > 0) {
     serialReceiveArray[serialReceiveByteCount] = Serial.read();
@@ -115,10 +134,15 @@ void loop(void) {
     restTemp[2] = serialReceiveArray[10];
     restTemp[3] = serialReceiveArray[11];
     progress = atoi(restTemp);
-    if (progress > 100) {
+    if (progress > 100 || forceOff) {
       beamerLEDOn = false;
+      programState = 3;
     } else {
       beamerLEDOn = true;
+    }
+    if (programState == 1) {
+        analogWrite(PIN_PWM_LED, 255);
+        programState = 2;
     }
     restTemp[0] = '0';
     restTemp[1] = '0';
@@ -130,11 +154,52 @@ void loop(void) {
     statusOuttake = (serialReceiveArray[22] == '1') ? true : false;
     statusHeater = (serialReceiveArray[24] == '1') ? true : false;
     serialReceiveComplete = false;
-    serialReceiveByteCount = 0;
+    serialReceiveByteCount = 0;  
     digitalWrite(PIN_STATUS_LED, true);
   }
 
+  if (programState == 2) {
+    //display function for in progress
+    display_process_inrun();
+  } else if (programState == 3) {
+    u8g2.setFont(u8g2_font_t0_22b_mr);
+    u8g2.drawUTF8(ALIGN_CENTER("PGR END"), 28, "PGR END");
+  } else if (programState == 4) {
+    analogWrite(PIN_PWM_LED, 0);  
+  }
 
+  //send data to the display
+  u8g2.sendBuffer();
+
+
+  if (programState == 2) {
+    delay(80);
+    digitalWrite(PIN_STATUS_LED, true);
+    delay(20);
+    ani_counter++;
+    digitalWrite(PIN_STATUS_LED, false);
+    analogWrite(PIN_PWM_LED, beamerLEDOn ? 255 : 0);
+  } else if (programState == 3) {
+    for (glow_counter = 0; glow_counter <= 255; glow_counter++) {
+        analogWrite(PIN_PWM_LED, glow_counter);
+        delay(4);
+    }
+    delay(500);
+    for (glow_counter = 255; glow_counter >= 0; glow_counter--) {
+        analogWrite(PIN_PWM_LED, glow_counter);
+        delay(4);
+    }
+    delay(10000);
+    //Calculate for max on time
+    if (millis() > timer_start + 14400000) {
+        programState = 4;
+    }
+  } else if (programState == 4) {
+    delay(10000);
+  }
+}
+
+void display_process_inrun() {
   //DISPLAY DETALS
   u8g2.setFont(u8g2_font_u8glib_4_tf);
   if (ani_statusHeater && statusHeater) { u8g2.drawGlyph(2, 9, 0x007e); }
@@ -170,8 +235,6 @@ void loop(void) {
     u8g2.drawBox(2+PixelProgress, 28, 1, 3); //cursor
   }
   
-  u8g2.sendBuffer();
-
   if (millis() > timer_last_exec + 1000) {
     timer_last_exec = millis();
     if (ete_timer > 0) { ete_timer--; }
@@ -190,9 +253,4 @@ void loop(void) {
     ani_statusIntake = !ani_statusIntake;
     ani_statusOuttake = !ani_statusOuttake;
   }
-
-  delay(100);
-  ani_counter++;
-  digitalWrite(PIN_STATUS_LED, false);
-  analogWrite(PIN_PWM_LED, beamerLEDOn ? 255 : 0);
 }
