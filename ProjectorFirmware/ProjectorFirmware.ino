@@ -22,7 +22,9 @@
 
 /*
   Projector Firmware von Constantin Zborowska
-  Version 30.12.2020
+  Start 30.12.2020
+  Version 07.09.2021
+  
   
   Programmiert für die Verwendung mit MieleSmartG470
 
@@ -73,10 +75,11 @@ char *timeToChars = (char*)malloc(2);
 
 long timer_last_exec = 0;
 long timer_start = 0;
+long timer_end = 0;
 
 void setup(void) {
   Serial.begin(9600);
-  u8g2.setBusClock(100000);
+  u8g2.setBusClock(70000);
   u8g2.begin();
 
   pinMode(PIN_STATUS_LED, OUTPUT);
@@ -137,12 +140,14 @@ void loop(void) {
     if (progress > 100 || forceOff) {
       beamerLEDOn = false;
       programState = 3;
+      timer_start = millis();
     } else {
       beamerLEDOn = true;
     }
     if (programState == 1) {
         analogWrite(PIN_PWM_LED, 255);
         programState = 2;
+        ani_counter = 0;
     }
     restTemp[0] = '0';
     restTemp[1] = '0';
@@ -163,7 +168,7 @@ void loop(void) {
     display_process_inrun();
   } else if (programState == 3) {
     u8g2.setFont(u8g2_font_t0_22b_mr);
-    u8g2.drawUTF8(ALIGN_CENTER("PGR END"), 28, "PGR END");
+    u8g2.drawUTF8(ALIGN_CENTER("ENDE"), 28, "ENDE");
   } else if (programState == 4) {
     analogWrite(PIN_PWM_LED, 0);  
   }
@@ -171,25 +176,34 @@ void loop(void) {
   //send data to the display
   u8g2.sendBuffer();
 
-
-  if (programState == 2) {
+  if (programState == 1) {
+    if (ani_counter % 40 == 0) {
+      digitalWrite(PIN_STATUS_LED, true);
+    }
+    delay(100);
+    ani_counter++;
+    digitalWrite(PIN_STATUS_LED, false);
+  } else if (programState == 2) {
     delay(80);
-    digitalWrite(PIN_STATUS_LED, true);
+    if (ani_counter % 30 == 0) {
+      digitalWrite(PIN_STATUS_LED, true);
+    }
     delay(20);
     ani_counter++;
     digitalWrite(PIN_STATUS_LED, false);
-    analogWrite(PIN_PWM_LED, beamerLEDOn ? 255 : 0);
   } else if (programState == 3) {
+    digitalWrite(PIN_STATUS_LED, true);
     for (glow_counter = 0; glow_counter <= 255; glow_counter++) {
         analogWrite(PIN_PWM_LED, glow_counter);
-        delay(4);
+        delay(8);
     }
-    delay(500);
+    digitalWrite(PIN_STATUS_LED, false);
+    delay(800);
     for (glow_counter = 255; glow_counter >= 0; glow_counter--) {
         analogWrite(PIN_PWM_LED, glow_counter);
-        delay(4);
+        delay(8);
     }
-    delay(10000);
+    delay(14000);
     //Calculate for max on time
     if (millis() > timer_start + 14400000) {
         programState = 4;
